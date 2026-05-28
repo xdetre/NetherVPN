@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  bot:
+    build: .
+    container_name: nethervpn_bot
+    restart: always
+    env_file: .env
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - nethervpn
+
+  db:
+    image: postgres:16-alpine
+    container_name: nethervpn_db
+    restart: always
+    environment:
+      POSTGRES_USER: nethervpn
+      POSTGRES_PASSWORD: qw378hfur12nv
+      POSTGRES_DB: nethervpn
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U nethervpn" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nethervpn
+
+  migrate:
+    build: .
+    container_name: nethervpn_migrate
+    command: alembic upgrade head
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - nethervpn
+
+volumes:
+  postgres_data:
+
+networks:
+  nethervpn:
+    driver: bridge
