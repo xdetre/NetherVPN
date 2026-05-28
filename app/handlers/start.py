@@ -7,7 +7,7 @@ from app.services.subscription import (
     get_active_subscription,
     create_free_subscription
 )
-from app.keyboards.inline import main_menu_kb, back_main_kb
+from app.keyboards.inline import main_menu_kb, back_main_kb, trial_kb
 from app.utils import safe_edit
 from app.config import settings
 
@@ -38,39 +38,11 @@ async def cmd_start(message: Message, session: AsyncSession):
     if is_new:
         await message.answer(
             f"👋 Добро пожаловать в <b>Nether VPN</b>!\n\n"
-            f"⏳ Создаю твой VPN конфиг...",
+            f"🔒 Быстрый VPN с обфускацией — работает везде, включая мобильный интернет в РФ.\n\n"
+            f"🎁 Попробуй бесплатно <b>{settings.FREE_DAYS} дней</b> без ограничений.",
+            reply_markup=trial_kb(),
             parse_mode="HTML"
         )
-
-        sub = await create_free_subscription(session, user)
-
-        if sub:
-            conf_bytes = sub.wg_config.encode()
-            conf_file = BufferedInputFile(conf_bytes, filename="nether_vpn.conf")
-
-            await message.answer_document(
-                document=conf_file,
-                caption=(
-                    f"✅ <b>Готово! Твой VPN активирован на {settings.FREE_DAYS} дней</b>\n\n"
-                    f"📱 <b>Как подключиться:</b>\n"
-                    f"1. Скачай <a href='https://apps.apple.com/app/amnezia-vpn/id1522739697'>Amnezia VPN</a>\n"
-                    f"2. Нажми <b>+</b> → <b>Добавить конфигурацию</b>\n"
-                    f"3. Выбери этот файл\n"
-                    f"4. Нажми подключиться\n\n"
-                    f"❓ Проблемы? Напиши в поддержку."
-                ),
-                parse_mode="HTML"
-            )
-            await message.answer(
-                "Главное меню <b>Nether VPN</b>",
-                reply_markup=main_menu_kb(),
-                parse_mode="HTML"
-            )
-        else:
-            await message.answer(
-                "⚠️ Что-то пошло не так при создании конфига. Напиши в поддержку.",
-                parse_mode="HTML"
-            )
     else:
         await message.answer(
             f"👋 С возвращением, <b>{user.full_name}</b>!\n\n"
@@ -78,6 +50,65 @@ async def cmd_start(message: Message, session: AsyncSession):
             reply_markup=main_menu_kb(),
             parse_mode="HTML"
         )
+
+
+@router.callback_query(F.data == "start_trial")
+async def start_trial(callback: CallbackQuery, session: AsyncSession):
+    user_id = callback.from_user.id
+
+    existing = await get_active_subscription(session, user_id)
+    if existing:
+        await callback.answer("У тебя уже есть активная подписка!", show_alert=True)
+        await safe_edit(callback.message, "Главное меню <b>Nether VPN</b>", reply_markup=main_menu_kb())
+        return
+
+    await callback.message.edit_text(
+        "⏳ <b>Создаю твой VPN конфиг...</b>\n\nЭто займёт несколько секунд.",
+        parse_mode="HTML"
+    )
+
+    user, _ = await get_or_create_user(
+        session=session,
+        telegram_id=callback.from_user.id,
+        username=callback.from_user.username,
+        full_name=callback.from_user.full_name,
+    )
+
+    sub = await create_free_subscription(session, user)
+
+    if sub:
+        conf_bytes = sub.wg_config.encode()
+        conf_file = BufferedInputFile(conf_bytes, filename="nether_vpn.conf")
+
+        await callback.message.delete()
+        await callback.bot.send_document(
+            chat_id=user_id,
+            document=conf_file,
+            caption=(
+                f"✅ <b>Готово! Твой VPN активирован на {settings.FREE_DAYS} дней</b>\n\n"
+                f"📱 <b>Как подключиться:</b>\n"
+                f"1. Скачай <a href='https://amnezia.org'>Amnezia VPN</a>\n"
+                f"2. Нажми <b>+</b> → <b>Добавить конфигурацию</b>\n"
+                f"3. Выбери этот файл\n"
+                f"4. Нажми подключиться\n\n"
+                f"❓ Проблемы? Напиши в поддержку."
+            ),
+            parse_mode="HTML"
+        )
+        await callback.bot.send_message(
+            chat_id=user_id,
+            text="Главное меню <b>Nether VPN</b>",
+            reply_markup=main_menu_kb(),
+            parse_mode="HTML"
+        )
+    else:
+        await callback.bot.send_message(
+            chat_id=user_id,
+            text="⚠️ Что-то пошло не так при создании конфига. Напиши в поддержку.",
+            parse_mode="HTML"
+        )
+
+    await callback.answer()
 
 
 @router.callback_query(F.data == "back_main")

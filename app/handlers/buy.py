@@ -5,6 +5,7 @@ from aiogram.types import Message, CallbackQuery, LabeledPrice, PreCheckoutQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.subscription import create_paid_subscription, get_or_create_user
 from app.keyboards.inline import buy_kb, payment_kb, back_main_kb, main_menu_kb
+from app.services.cbr import get_usd_rub_rate
 
 import uuid, yookassa
 from yookassa import Payment as YKPayment
@@ -16,42 +17,25 @@ from app.utils import safe_edit
 
 router = Router()
 
-# PLANS = {
-#     1: {"price": 1, "stars": 50, "label": "1 месяц"},
-#     3: {"price": 2.5, "stars": 125, "label": "3 месяца"},
-#     6: {"price": 5, "stars": 250, "label": "6 месяцев"},
-# }
-
-
 PLANS = {
-    1: {"price": 80, "stars": 50, "label": "1 месяц", "rub": 80},
-    3: {"price": 150, "stars": 125, "label": "3 месяца", "rub": 150},
-    6: {"price": 280, "stars": 250, "label": "6 месяцев", "rub": 280},
+    1: {"usd": 1.0, "stars": 50, "label": "1 месяц"},
+    3: {"usd": 2.5, "stars": 125, "label": "3 месяца"},
+    6: {"usd": 5.0, "stars": 250, "label": "6 месяцев"},
 }
 
-
-# async def buy(update: Message | CallbackQuery):
-#     text = (
-#         "💳 <b>Выбери план подписки:</b>\n\n"
-#         "1 месяц — <b>1$</b> / 50 ⭐\n"
-#         "3 месяца — <b>2.5$</b> / 125 ⭐\n"
-#         "6 месяцев — <b>5$</b> / 250 ⭐\n\n"
-#         "📦 Трафик: <b>100 ГБ</b>\n"
-#         "🌍 Сервер: <b>Финляндия</b>\n"
-#         "🔒 Протокол: <b>VLESS + Reality</b>"
-#     )
 
 @router.message(Command("buy"))
 @router.callback_query(F.data == "buy")
 async def buy(update: Message | CallbackQuery):
+    rate = await get_usd_rub_rate()
     text = (
         "💳 <b>Выбери план подписки:</b>\n\n"
-        "1 месяц — <b>80₽</b> / 50 ⭐\n"
-        "3 месяца — <b>150₽</b> / 125 ⭐\n"
-        "6 месяцев — <b>280₽</b> / 250 ⭐\n\n"
-        "📦 Трафик: <b>100 ГБ</b>\n"
+        f"1 месяц — <b>$1</b> / 50 ⭐ (~{round(1.0 * rate)}₽)\n"
+        f"3 месяца — <b>$2.5</b> / 125 ⭐ (~{round(2.5 * rate)}₽)\n"
+        f"6 месяцев — <b>$5</b> / 250 ⭐ (~{round(5.0 * rate)}₽)\n\n"
         "🌍 Сервер: <b>Финляндия</b>\n"
-        "🔒 Протокол: <b>VLESS + Reality</b>"
+        "🔒 Протокол: <b>AmneziaWG</b>\n"
+        "💱 Цена в рублях по курсу ЦБ РФ"
     )
     if isinstance(update, CallbackQuery):
         await update.message.edit_text(text, reply_markup=buy_kb(), parse_mode="HTML")
@@ -59,23 +43,16 @@ async def buy(update: Message | CallbackQuery):
         await update.answer(text, reply_markup=buy_kb(), parse_mode="HTML")
 
 
-# @router.callback_query(F.data.startswith("buy_"))
-# async def buy_plan(callback: CallbackQuery):
-#     months = int(callback.data.split("_")[1])
-#     plan = PLANS[months]
-#     text = (
-#         f"📦 <b>{plan['label']}</b>\n\n"
-#         f"Стоимость: <b>{plan['stars']} ⭐ Telegram Stars</b>\n\n"
-#         f"Нажми кнопку ниже чтобы оплатить."
-#     )
-#     await callback.message.edit_text(text, reply_markup=payment_kb(months), parse_mode="HTML")
 @router.callback_query(F.data.startswith("buy_"))
 async def buy_plan(callback: CallbackQuery):
     months = int(callback.data.split("_")[1])
     plan = PLANS[months]
+    rate = await get_usd_rub_rate()
+    rub = round(plan["usd"] * rate)
     text = (
         f"📦 <b>{plan['label']}</b>\n\n"
-        f"Стоимость: <b>{plan['rub']}₽</b> / <b>{plan['stars']} ⭐ Stars</b>\n\n"
+        f"Стоимость: <b>${plan['usd']}</b> / <b>{plan['stars']} ⭐ Stars</b>\n"
+        f"В рублях: <b>~{rub}₽</b> (курс ЦБ: {rate:.2f} ₽/$)\n\n"
         f"Выбери способ оплаты:"
     )
     await safe_edit(callback.message, text, reply_markup=payment_kb(months))
@@ -86,12 +63,12 @@ async def pay_stars(callback: CallbackQuery):
     months = int(callback.data.split("_")[2])
     plan = PLANS[months]
 
-    await callback.message.delete()  # удаляем предыдущее сообщение
+    await callback.message.delete()
 
     await callback.bot.send_invoice(
         chat_id=callback.from_user.id,
         title=f"Nether VPN — {plan['label']}",
-        description=f"Подписка на {plan['label']}, 100 ГБ трафика, сервер Финляндия",
+        description=f"Подписка на {plan['label']}, сервер Финляндия, протокол AmneziaWG",
         payload=f"sub_{months}",
         currency="XTR",
         prices=[LabeledPrice(label=plan["label"], amount=plan["stars"])],
@@ -122,7 +99,7 @@ async def successful_payment(message: Message, session: AsyncSession):
         session=session,
         user=user,
         months=months,
-        amount=plan["price"],
+        amount=plan["usd"],
         currency="XTR",
         telegram_payment_id=payment.telegram_payment_charge_id
     )
@@ -132,7 +109,7 @@ async def successful_payment(message: Message, session: AsyncSession):
             f"✅ <b>Оплата прошла успешно!</b>\n\n"
             f"📦 План: <b>{plan['label']}</b>\n"
             f"📅 Действует до: <b>{sub.expires_at.strftime('%d.%m.%Y')}</b>\n\n"
-            f"Получи ссылку подключения командой /config",
+            f"Получи конфиг командой /config",
             reply_markup=main_menu_kb(),
             parse_mode="HTML"
         )
@@ -149,12 +126,15 @@ async def pay_yukassa(callback: CallbackQuery):
     months = int(callback.data.split("_")[2])
     plan = PLANS[months]
 
+    rate = await get_usd_rub_rate()
+    rub = round(plan["usd"] * rate, 2)
+
     yookassa.Configuration.account_id = settings.YUKASSA_SHOP_ID
     yookassa.Configuration.secret_key = settings.YUKASSA_SECRET_KEY
 
     payment = YKPayment.create({
         "amount": {
-            "value": str(plan["price"]),
+            "value": f"{rub:.2f}",
             "currency": "RUB"
         },
         "confirmation": {
@@ -175,7 +155,7 @@ async def pay_yukassa(callback: CallbackQuery):
         text=(
             f"💳 <b>Оплата через ЮКассу</b>\n\n"
             f"План: <b>{plan['label']}</b>\n"
-            f"Сумма: <b>{plan['price']}₽</b>\n\n"
+            f"Сумма: <b>{rub:.2f}₽</b> (${plan['usd']} по курсу ЦБ)\n\n"
             f"Нажми кнопку ниже для оплаты:"
         ),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
@@ -236,7 +216,7 @@ async def yukassa_webhook(request: web.Request) -> web.Response:
                     f"✅ <b>Оплата прошла успешно!</b>\n\n"
                     f"📦 План: <b>{plan['label']}</b>\n"
                     f"📅 Действует до: <b>{sub.expires_at.strftime('%d.%m.%Y')}</b>\n\n"
-                    f"Получи ссылку подключения командой /config"
+                    f"Получи конфиг командой /config"
                 ),
                 reply_markup=main_menu_kb(),
                 parse_mode="HTML"

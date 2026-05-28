@@ -1,6 +1,7 @@
+import asyncio
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.models.models import User, Subscription, Payment
 from app.services.amnezia import create_client, delete_client
 from app.config import settings
@@ -44,6 +45,16 @@ async def get_active_subscription(
     return result.scalar_one_or_none()
 
 
+async def _get_public_key(private_key: str) -> str:
+    proc = await asyncio.create_subprocess_shell(
+        f"echo '{private_key}' | docker exec -i amnezia-awg2 awg pubkey",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, _ = await proc.communicate()
+    return stdout.decode().strip()
+
+
 async def create_free_subscription(
     session: AsyncSession,
     user: User
@@ -52,20 +63,12 @@ async def create_free_subscription(
     if not conf:
         return None
 
-    # Извлечь публичный ключ из конфига
-    public_key = ""
     private_key = ""
     for line in conf.splitlines():
         if line.startswith("PrivateKey"):
             private_key = line.split("=", 1)[1].strip()
 
-    # Получить публичный ключ из приватного
-    import subprocess
-    result = subprocess.run(
-        f"echo '{private_key}' | docker exec -i amnezia-awg2 awg pubkey",
-        shell=True, capture_output=True, text=True
-    )
-    public_key = result.stdout.strip()
+    public_key = await _get_public_key(private_key)
 
     subscription = Subscription(
         user_id=user.id,
@@ -91,7 +94,8 @@ async def create_paid_subscription(
     existing = await get_active_subscription(session, user.id)
 
     if existing:
-        existing.expires_at = datetime.utcnow() + timedelta(days=days)
+        # Extend from the current expiry date, not from now
+        existing.expires_at = existing.expires_at + timedelta(days=days)
         existing.is_active = True
         sub = existing
     else:
@@ -99,17 +103,12 @@ async def create_paid_subscription(
         if not conf:
             return None
 
-        import subprocess
         private_key = ""
         for line in conf.splitlines():
             if line.startswith("PrivateKey"):
                 private_key = line.split("=", 1)[1].strip()
 
-        result = subprocess.run(
-            f"echo '{private_key}' | docker exec -i amnezia-awg2 awg pubkey",
-            shell=True, capture_output=True, text=True
-        )
-        public_key = result.stdout.strip()
+        public_key = await _get_public_key(private_key)
 
         sub = Subscription(
             user_id=user.id,
@@ -152,6 +151,6 @@ async def get_referral_count(
     user_id: int
 ) -> int:
     result = await session.execute(
-        select(User).where(User.referred_by == user_id)
+        select(func.count()).where(User.referred_by == user_id)
     )
-    return len(result.scalars().all())
+    return result.scalar() or 0
