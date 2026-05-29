@@ -69,7 +69,7 @@ async def create_client(user_id: int, username: str) -> str | None:
 
 
 def _create_client_sync(user_id: int, username: str) -> str:
-    client_name = f"user_{user_id}"
+    client_name = username if username else f"user_{user_id}"
     client_ip = _get_next_ip()
     private_key, public_key, preshared_key = _generate_keys()
     server_public_key = _get_server_public_key()
