@@ -8,7 +8,7 @@ from app.services.subscription import (
     get_active_subscription,
     get_referral_count
 )
-from app.keyboards.inline import main_menu_kb, back_main_kb
+from app.keyboards.inline import main_menu_kb, back_main_kb, profile_kb
 from app.utils import safe_edit
 
 
@@ -34,15 +34,17 @@ async def profile(update: Message | CallbackQuery, session: AsyncSession):
 
     if sub:
         text = format_subscription_text(sub)
+        kb = profile_kb()
     else:
         text = "❌ <b>Подписка неактивна</b>\n\nКупи подписку чтобы пользоваться Nether VPN."
+        kb = back_main_kb()
 
     text += f"\n👥 Приглашено друзей: <b>{referrals}</b>"
 
     if isinstance(update, CallbackQuery):
-        await safe_edit(update.message, text, reply_markup=back_main_kb())
+        await safe_edit(update.message, text, reply_markup=kb)
     else:
-        await update.answer(text, reply_markup=back_main_kb(), parse_mode="HTML")
+        await update.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
 @router.message(Command("config"))
@@ -61,7 +63,7 @@ async def config(update: Message | CallbackQuery, session: AsyncSession):
 
     from aiogram.types import BufferedInputFile
     conf_bytes = sub.wg_config.encode()
-    conf_file = BufferedInputFile(conf_bytes, filename="nether_vpn.conf")
+    conf_file = BufferedInputFile(conf_bytes, filename="nether_vpn.vpn")
 
     if isinstance(update, CallbackQuery):
         await update.message.answer_document(

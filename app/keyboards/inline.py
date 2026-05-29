@@ -35,6 +35,13 @@ def payment_kb(months: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def profile_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="📥 Получить конфиг", callback_data="config"))
+    builder.row(InlineKeyboardButton(text="◀️ Главное меню", callback_data="back_main"))
+    return builder.as_markup()
+
+
 def back_main_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="◀️ Главное меню", callback_data="back_main"))

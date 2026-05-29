@@ -78,7 +78,7 @@ async def start_trial(callback: CallbackQuery, session: AsyncSession):
 
     if sub:
         conf_bytes = sub.wg_config.encode()
-        conf_file = BufferedInputFile(conf_bytes, filename="nether_vpn.conf")
+        conf_file = BufferedInputFile(conf_bytes, filename="nether_vpn.vpn")
 
         await callback.message.delete()
         await callback.bot.send_document(
