@@ -125,7 +125,7 @@ async def howto(callback: CallbackQuery):
     text = (
         "📱 <b>Как подключиться:</b>\n\n"
         "<b>iOS:</b>\n"
-        "1. Скачай <a href='https://apps.apple.com/app/amnezia-vpn/id1522739697'>Amnezia VPN</a>\n"
+        "1. Скачай <a href='https://apps.apple.com/app/amneziavpn/id1600529900'>Amnezia VPN</a>\n"
         "2. Нажми + → Добавить конфигурацию\n"
         "3. Выбери файл из бота\n\n"
         "<b>Android:</b>\n"
